@@ -5,6 +5,7 @@ export interface WebUIContext {
     getFramePlay: () => Controller;
     updateTrajectoryName: (name: string) => void;
     connectToServer: (host: string) => void;
+    runCommand: (name: string, args?: Record<string, unknown>) => Promise<unknown>;
     setCartoonStyle: (style: 'simple' | 'advanced') => void;
 }
 
@@ -69,6 +70,55 @@ export function setupWebUI(ctx: WebUIContext) {
 
     // server functionality
     setupServerTab();
+    setupControlsTab();
+}
+
+let controlsPlaying = false;
+let userCommandsContainer: HTMLDivElement | null = null;
+
+function setupControlsTab() {
+    userCommandsContainer = document.getElementById('user-commands-container') as HTMLDivElement | null;
+    const playBtn = document.getElementById('btn-ctrl-play') as HTMLButtonElement | null;
+
+    document.getElementById('btn-ctrl-restart')?.addEventListener('click', () => {
+        void context?.runCommand('playback/reset');
+    });
+    document.getElementById('btn-ctrl-step')?.addEventListener('click', () => {
+        void context?.runCommand('playback/step');
+    });
+    playBtn?.addEventListener('click', () => {
+        controlsPlaying = !controlsPlaying;
+        playBtn.textContent = controlsPlaying ? 'Pause' : 'Play';
+        void context?.runCommand(controlsPlaying ? 'playback/play' : 'playback/pause');
+    });
+
+    setWebUserCommands(lastUserCommands);
+}
+
+export function setWebConnected(connected: boolean) {
+    document.getElementById('tab-controls')?.classList.toggle('connected', connected);
+    if (connected) {
+        document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="controls"]')?.click();
+    }
+}
+
+type WebUserCommand = { name: string; label?: string; icon?: string };
+let lastUserCommands: WebUserCommand[] = [];
+
+export function setWebUserCommands(commands: WebUserCommand[]) {
+    lastUserCommands = commands;
+    if (!userCommandsContainer) return;
+    userCommandsContainer.replaceChildren();
+    for (const command of commands) {
+        const button = document.createElement('button');
+        button.className = 'panel-btn';
+        const label = command.label ?? command.name.split('/').slice(1).join(' ');
+        button.textContent = command.icon ? `${command.icon} ${label}` : label;
+        button.addEventListener('click', () => {
+            void context?.runCommand(command.name);
+        });
+        userCommandsContainer.appendChild(button);
+    }
 }
 
 function setupServerTab() {

@@ -1,15 +1,11 @@
 import {
-  BoxGeometry,
   CylinderGeometry,
   Group,
-  InstancedMesh,
   Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
-  Quaternion,
   Scene,
-  Sphere,
   Vector3,
   WebXRSpaceEventMap,
 } from 'three';
@@ -43,8 +39,6 @@ interface InteractionManagerOptions {
 export const MAX_INTERACTION_DISTANCE = 0.3;
 
 export class InteractionManager {
-  readonly remoteInteractions: InstancedMesh;
-
   private readonly objects: Object3D;
   private readonly interactionLines = new Group();
   private readonly remoteInteractionLines = new Group();
@@ -52,7 +46,7 @@ export class InteractionManager {
   private readonly controllerTips = new Map<Group<WebXRSpaceEventMap>, Object3D>();
   private readonly remoteLines: Mesh[] = [];
 
-  private readonly lineGeometry = new CylinderGeometry(0.0025, 0.0025, 1, 8);
+  private readonly lineGeometry = new CylinderGeometry(0.002, 0.002, 1, 8);
   private readonly lineMaterial = new MeshBasicMaterial({
     color: 0xffff00,
     transparent: true,
@@ -64,9 +58,6 @@ export class InteractionManager {
   private readonly worldPos = new Vector3();
   private readonly atomPos = new Vector3();
   private readonly inverseObjects = new Matrix4();
-  private readonly matrix = new Matrix4();
-  private readonly rotation = new Quaternion();
-  private readonly remoteScale = new Vector3(0.08, 0.08, 0.08);
   private readonly remoteSimPos = new Vector3();
   private readonly sceneMatrix = new Matrix4();
 
@@ -83,15 +74,6 @@ export class InteractionManager {
 
   constructor(options: InteractionManagerOptions) {
     this.objects = options.objects;
-
-    this.remoteInteractions = new InstancedMesh(
-      new BoxGeometry(),
-      new MeshBasicMaterial({ color: 'green' }),
-      64,
-    );
-    this.remoteInteractions.boundingSphere = new Sphere(new Vector3(), 100);
-    this.remoteInteractions.count = 0;
-    this.objects.add(this.remoteInteractions);
 
     this.lineGeometry.rotateX(Math.PI / 2);
     this.lineGeometry.translate(0, 0, 0.5);
@@ -290,7 +272,6 @@ export class InteractionManager {
   }
 
   renderRemoteInteractions(interactions: LiveInteractionState[], framePositions = this.currentPositions ?? undefined) {
-    this.remoteInteractions.count = 0;
     let renderedLineCount = 0;
 
     this.sceneMatrix.copy(updateSceneMatrixWorld(this.objects));
@@ -313,11 +294,6 @@ export class InteractionManager {
         this.remoteSimPos.fromArray(framePositions, from);
         simulationToWorld(this.sceneMatrix, this.remoteSimPos, this.worldPos);
       }
-
-      this.rotation.identity();
-      this.matrix.compose(this.worldPos, this.rotation, this.remoteScale);
-      this.remoteInteractions.setMatrixAt(this.remoteInteractions.count, this.matrix);
-      this.remoteInteractions.count += 1;
 
       if (!framePositions) {
         continue;
@@ -343,8 +319,6 @@ export class InteractionManager {
     for (let i = renderedLineCount; i < this.remoteLines.length; i += 1) {
       this.remoteLines[i].visible = false;
     }
-
-    this.remoteInteractions.instanceMatrix.needsUpdate = true;
   }
 
   private getRemoteLine(index: number): Mesh {

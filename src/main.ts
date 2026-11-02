@@ -35,7 +35,7 @@ import {
   setupXRUI,
   updateXRUI,
 } from './ui/xrUI';
-import { setupWebUI, updateWebUI } from './ui/webUI';
+import { setupWebUI, updateWebUI, setWebConnected, setWebUserCommands } from './ui/webUI';
 import { setupNotificationUI, showNotification, updateNotificationUI } from './ui/xrNotification';
 import { AvatarRendering } from './visuals/avatar-rendering';
 import { InteractionManager } from './tools/interaction-manager';
@@ -161,7 +161,10 @@ class SceneApp {
 
     setupNotificationUI(threeScene);
     this.networkClient.setNotificationHandler(showNotification);
-    this.networkClient.setUserCommandsHandler(setUserCommands);
+    this.networkClient.setUserCommandsHandler((commands) => {
+      setUserCommands(commands);
+      setWebUserCommands(commands);
+    });
 
     this.interactionManager.setInteractionSender((interactionId, interaction) => {
       this.networkClient.sendInteractionUpdate(interactionId, interaction);
@@ -194,11 +197,13 @@ class SceneApp {
       getFramePlay: () => this.framePlay,
       updateTrajectoryName: this.updateTrajectoryName,
       setCartoonStyle: style => this.networkClient.setCartoonStyle(style),
+      runCommand: (name, args) => this.networkClient.runCommand(name, args),
       connectToServer: (host: string) => {
         this.networkClient.connect(host);
         this.trajectoryLoader.hideAll();
         this.framePlay.setValue(false);
         setConnectedToServer(true);
+        setWebConnected(true);
       },
     });
 
@@ -266,6 +271,7 @@ class SceneApp {
       this.trajectoryLoader.hideAll();
       this.framePlay.setValue(false);
       setConnectedToServer(true);
+      setWebConnected(true);
     };
 
     const connectFolder = gui.addFolder('Direct');

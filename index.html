@@ -13,6 +13,7 @@
       <div id="tab-bar">
         <button class="tab-btn active" data-tab="simulation">Recording</button>
         <button class="tab-btn" data-tab="server">Server</button>
+        <button class="tab-btn" data-tab="controls">Controls</button>
         <button class="tab-btn" data-tab="settings">Settings</button>
         <button class="tab-btn" data-tab="info">Info</button>
       </div>
@@ -28,6 +29,16 @@
       <div class="tab-content" id="tab-server">
         <button id="btn-refresh" class="panel-btn primary">Refresh</button>
         <div id="server-buttons-container"></div>
+      </div>
+
+      <div class="tab-content" id="tab-controls">
+        <p id="controls-status" class="server-status">Connect to a server to use controls</p>
+        <div id="controls-row">
+          <button id="btn-ctrl-restart" class="panel-btn">Restart</button>
+          <button id="btn-ctrl-play" class="panel-btn primary">Play</button>
+          <button id="btn-ctrl-step" class="panel-btn">Step</button>
+        </div>
+        <div id="user-commands-container"></div>
       </div>
 
       <div class="tab-content" id="tab-settings">
