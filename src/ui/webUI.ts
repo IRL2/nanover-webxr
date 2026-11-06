@@ -171,23 +171,11 @@ function renderServerButtons(servers: DiscoveryServerInfo[]) {
         serverButton.className = 'panel-btn server-btn';
         serverButton.textContent = server.name;
         serverButton.addEventListener('click', () => {
-            context?.connectToServer(server.wss);
+            window.onmessage = () => {context?.connectToServer(server.wss); window.onmessage = null; };
+            window.open(server.https);
         });
 
-        const row = document.createElement('div');
-        row.className = 'server-row';
-        row.appendChild(serverButton);
-
-        if (server.https) {
-            const certLink = document.createElement('a');
-            certLink.className = 'panel-btn cert-btn';
-            certLink.textContent = 'CERT';
-            certLink.href = server.https;
-            certLink.target = '_blank';
-            certLink.rel = 'noopener noreferrer';
-            row.appendChild(certLink);
-        }
-        serverButtonsContainer.appendChild(row);
+        serverButtonsContainer.appendChild(serverButton);
     }
 }
 

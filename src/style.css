@@ -187,27 +187,6 @@ h1 {
   font-size: 14px;
 }
 
-.server-row {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-}
-
-.server-row .server-btn {
-  flex: 1;
-  width: auto;
-}
-
-.cert-btn {
-  box-sizing: border-box;
-  width: auto;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  font-size: 12px;
-  text-decoration: none;
-}
-
 .server-btn {
   width: 100%;
   margin: 0;
