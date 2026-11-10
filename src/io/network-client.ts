@@ -55,6 +55,8 @@ interface NetworkClientOptions {
   avatarRendering: AvatarRendering;
   interactionManager: InteractionManager;
   primitivesRenderer: PrimitivesRenderer;
+  onStateDelta: (updates: Record<string, unknown> | undefined, removals: string[] | undefined) => void;
+  onStateReset: () => void;
 }
 
 type SharedStateUpdate = {
@@ -92,6 +94,8 @@ export class NetworkClient {
   private readonly avatarRendering: AvatarRendering;
   private readonly interactionManager: InteractionManager;
   private readonly primitivesRenderer: PrimitivesRenderer;
+  private readonly onStateDelta: NetworkClientOptions['onStateDelta'];
+  private readonly onStateReset: NetworkClientOptions['onStateReset'];
   private readonly worker: Worker;
   private readonly channel = new MessageChannel();
 
@@ -161,6 +165,8 @@ export class NetworkClient {
     this.avatarRendering = options.avatarRendering;
     this.interactionManager = options.interactionManager;
     this.primitivesRenderer = options.primitivesRenderer;
+    this.onStateDelta = options.onStateDelta;
+    this.onStateReset = options.onStateReset;
     this.interactionManager.setOwnerId(this.localAvatarId);
 
     this.boxEdges.visible = false;
@@ -186,6 +192,7 @@ export class NetworkClient {
     this.localInteractionIds.clear();
     this.setUserCommands([]);
     this.primitivesRenderer.clear();
+    this.onStateReset();
     this.publishedCursorKeys.clear();
     this.lastSentCursors.clear();
     this.topologyNames = null;
@@ -366,6 +373,7 @@ export class NetworkClient {
     } else if (message.event === 'close') {
       this.setUserCommands([]);
       this.primitivesRenderer.clear();
+      this.onStateReset();
       this.publishedCursorKeys.clear();
       this.lastSentCursors.clear();
     }
@@ -373,6 +381,7 @@ export class NetworkClient {
     const primitivesDelta = message.frame.state as SharedStateUpdate | undefined;
     if (primitivesDelta && (primitivesDelta.updates || primitivesDelta.removals)) {
       this.primitivesRenderer.applyStateDelta(primitivesDelta.updates, primitivesDelta.removals);
+      this.onStateDelta(primitivesDelta.updates, primitivesDelta.removals);
     }
 
     const normalized = normalizeLivePayload(message, this.sharedState);

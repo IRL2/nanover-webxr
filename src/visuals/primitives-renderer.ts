@@ -43,6 +43,7 @@ import {
   SPRITE_PREFIX,
   TRANSFORM_PREFIX,
 } from '../core/primitives';
+import { loadResourceTexture } from '../io/resource-texture';
 
 interface PrimitivesRendererOptions {
   root: Object3D;
@@ -70,6 +71,7 @@ interface SpriteEntry {
   material: MeshBasicMaterial;
   textureKey: string;
   size: number;
+  transformScale: Vector3 | null;
 }
 
 const MAX_LINE_INSTANCES = 8192;
@@ -285,8 +287,15 @@ export class PrimitivesRenderer {
       entry.mesh.geometry = this.getShapeGeometry(data.shape);
     }
 
-    entry.mesh.position.fromArray(data.position);
-    entry.mesh.scale.setScalar(Math.max(1e-6, data.size));
+    if (data.transform) {
+      // inline transform: set position/rotation/scale from it and ignore
+      // the position/size properties
+      applyStateTransform(data.transform, entry.mesh.position, entry.mesh.quaternion, entry.mesh.scale);
+    } else {
+      entry.mesh.position.fromArray(data.position);
+      entry.mesh.quaternion.identity();
+      entry.mesh.scale.setScalar(Math.max(1e-6, data.size));
+    }
     entry.material.color.setRGB(data.color[0], data.color[1], data.color[2]);
     entry.material.opacity = data.color[3];
     entry.material.wireframe = data.shape === 'wireframe';
@@ -420,7 +429,7 @@ export class PrimitivesRenderer {
       });
       const mesh = new Mesh(this.planeGeometry, material);
       mesh.frustumCulled = false;
-      entry = { mesh, material, textureKey: '', size: 1 };
+      entry = { mesh, material, textureKey: '', size: 1, transformScale: null };
       this.sprites.set(key, entry);
     }
 
@@ -432,7 +441,20 @@ export class PrimitivesRenderer {
     }
 
     entry.size = Math.max(1e-6, data.size);
-    entry.mesh.position.fromArray(data.position);
+
+    if (data.transform) {
+      // inline transform: set position/rotation/scale from it and ignore
+      // the position/size properties
+      applyStateTransform(data.transform, entry.mesh.position, entry.mesh.quaternion, entry.mesh.scale);
+      if (!entry.transformScale) {
+        entry.transformScale = new Vector3();
+      }
+      entry.transformScale.copy(entry.mesh.scale);
+    } else {
+      entry.transformScale = null;
+      entry.mesh.position.fromArray(data.position);
+      entry.mesh.quaternion.identity();
+    }
     this.applySpriteScale(entry);
     entry.material.color.setRGB(data.color[0], data.color[1], data.color[2]);
     entry.material.opacity = data.color[3];
@@ -442,7 +464,14 @@ export class PrimitivesRenderer {
   private applySpriteScale(entry: SpriteEntry) {
     const image = entry.material.map?.image as { width?: number; height?: number } | undefined;
     const aspect = image?.width && image?.height ? image.width / image.height : 1;
-    entry.mesh.scale.set(entry.size * aspect, entry.size, 1);
+    const transformScale = entry.transformScale;
+    if (transformScale) {
+      // inline transform: scale.y is the sprite height in metres and the
+      // texture aspect is kept on x, consistent with the size property
+      entry.mesh.scale.set(transformScale.x * aspect, transformScale.y, transformScale.z);
+    } else {
+      entry.mesh.scale.set(entry.size * aspect, entry.size, 1);
+    }
   }
 
   private removeSprite(key: string) {
@@ -465,11 +494,19 @@ export class PrimitivesRenderer {
     this.pendingTextures.add(textureKey);
 
     if (/^(https?:)?\/\//.test(textureKey) || textureKey.startsWith('/')) {
-      new TextureLoader().load(textureKey, (texture) => {
-        this.pendingTextures.delete(textureKey);
-        this.textures.set(textureKey, texture);
-        this.applyTexture(textureKey, texture);
-      });
+      new TextureLoader().load(
+        textureKey,
+        (texture) => {
+          this.pendingTextures.delete(textureKey);
+          this.textures.set(textureKey, texture);
+          this.applyTexture(textureKey, texture);
+        },
+        undefined,
+        (error) => {
+          this.pendingTextures.delete(textureKey);
+          console.warn('Failed to load sprite texture', textureKey, error);
+        },
+      );
       return undefined;
     }
 
@@ -479,32 +516,12 @@ export class PrimitivesRenderer {
 
   private async fetchResourceTexture(textureKey: string) {
     try {
-      const response = await this.runCommand('resources/fetch', { key: textureKey });
-      const data = (response as { data?: unknown } | undefined)?.data;
-
-      let bytes: Uint8Array | undefined;
-      if (data instanceof Uint8Array) {
-        bytes = data;
-      } else if (Array.isArray(data)) {
-        bytes = Uint8Array.from(data as number[]);
-      }
-
-      if (!bytes || bytes.length === 0) {
-        this.pendingTextures.delete(textureKey);
-        return;
-      }
-
-      const copy = new Uint8Array(bytes.length);
-      copy.set(bytes);
-      const url = URL.createObjectURL(new Blob([copy], { type: 'image/png' }));
-      new TextureLoader().load(url, (texture) => {
-        URL.revokeObjectURL(url);
-        this.pendingTextures.delete(textureKey);
-        this.textures.set(textureKey, texture);
-        this.applyTexture(textureKey, texture);
-      });
+      const texture = await loadResourceTexture(this.runCommand, textureKey);
+      this.textures.set(textureKey, texture);
+      this.applyTexture(textureKey, texture);
     } catch (error) {
-      console.warn('Failed to fetch sprite texture', textureKey, error);
+      console.warn('Failed to load sprite texture', textureKey, error);
+    } finally {
       this.pendingTextures.delete(textureKey);
     }
   }

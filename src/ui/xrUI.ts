@@ -176,6 +176,7 @@ function updateColocationUI() {
     }
 }
 
+// updates the visibility of the UI elements based on connection and colocation state
 function updateUIVisibility() {
     const showPlayback = !isConnectedToServer;
     const showConnected = isConnectedToServer;
@@ -274,7 +275,11 @@ export interface XRUIContext {
     publishSharedState?: (updates: Record<string, unknown>, removals?: string[]) => void;
 }
 
+// builds the panel. the UI attached to the panelRot object positioned 
+// relative to the headsed
 export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
+
+    // root container for the entire UI
     controlPanel = new Container({
         flexDirection: "column",
         alignItems: "center",
@@ -286,6 +291,7 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
     controlPanel.position.set(0, 0, 0);
     panelRot.add(controlPanel);
 
+    // playback and interaction controls
     const uiContainer = new Container({
         sizeX: 0.9,
         sizeY: PLAYBACK_PANEL_HEIGHT,
@@ -298,6 +304,7 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
     uiContainerRef = uiContainer;
     controlPanel.add(uiContainer);
 
+    // helper to create buttons with consistent styling and hover behavior
     function createUIButton(
         label: string,
         color: number,
@@ -346,6 +353,7 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
         return button;
     }
 
+    // client commands panel
     userCommandsPanel = new Container({
         sizeX: 0.9,
         flexDirection: "column",
@@ -387,7 +395,7 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
             }
         }
     }
-
+    // render parced commands
     renderUserCommands = (commands) => {
         for (const button of userCommandButtons) {
             const buttonIndex = uikitButtons.indexOf(button);

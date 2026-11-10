@@ -1,16 +1,17 @@
 import GUI, { Controller } from 'lil-gui';
 import {
   AmbientLight,
-  BackSide,
   Clock,
   Color,
   DirectionalLight,
-  IcosahedronGeometry,
+  EquirectangularReflectionMapping,
   Mesh,
-  MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
+  SRGBColorSpace,
   Scene,
+  Texture,
+  TextureLoader,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -40,11 +41,14 @@ import { setupNotificationUI, showNotification, updateNotificationUI } from './u
 import { AvatarRendering } from './visuals/avatar-rendering';
 import { InteractionManager } from './tools/interaction-manager';
 import { NetworkClient } from './io/network-client';
+import { loadResourceTexture } from './io/resource-texture';
 import { DEFAULT_TRAJECTORIES, TrajectoryLoader } from './io/trajectory-loader';
 import { XRInputManager } from './xr/xrInput';
 import { PrimitivesRenderer } from './visuals/primitives-renderer';
 
 const CANVAS_ID = 'scene';
+const SKYBOX_KEY = 'suggestions.skybox';
+const SHOW_SKYBOX = false;
 
 function getURLParam(param: string): string | null {
   const urlParams = new URLSearchParams(window.location.search);
@@ -65,6 +69,9 @@ class SceneApp {
   private readonly calibratedSpace = new Object3D();
   private readonly objects = new Object3D();
   private readonly panelRot = new Object3D();
+  private fallbackSkyboxTexture: Texture | null = null;
+  private skyboxTexture: Texture | null = null;
+  private skyboxRevision = 0;
   private readonly live = new NaiveRenderer();
   private readonly cartoon = new CartoonRenderer();
   private readonly simpleCartoon = new SimpleCartoonRenderer();
@@ -118,14 +125,21 @@ class SceneApp {
     this.cameraControls.autoRotate = false;
     this.cameraControls.update();
 
-    const skybox = new Mesh(
-      new IcosahedronGeometry(),
-      new MeshBasicMaterial({ color: 0x505050, transparent: true, opacity: 0.995, side: BackSide }),
+    new TextureLoader().load(
+      '/images/panoramic_skybox.png',
+      (texture) => {
+        texture.mapping = EquirectangularReflectionMapping;
+        texture.colorSpace = SRGBColorSpace;
+        this.fallbackSkyboxTexture = texture;
+        if (SHOW_SKYBOX && !this.skyboxTexture) {
+          this.scene.background = texture;
+        }
+      },
+      undefined,
+      (error) => {
+        console.error('Failed to load fallback skybox', error);
+      },
     );
-    skybox.scale.set(5, 5, 5);
-    skybox.position.set(0, 1, 0);
-    skybox.visible = false;
-    threeScene.add(skybox);
 
     this.avatarRendering = new AvatarRendering({
       parent: this.calibratedSpace,
@@ -157,6 +171,15 @@ class SceneApp {
       avatarRendering: this.avatarRendering,
       interactionManager: this.interactionManager,
       primitivesRenderer: this.primitivesRenderer,
+      onStateDelta: (updates, removals) => {
+        if (updates && Object.hasOwn(updates, SKYBOX_KEY)) {
+          this.updateSkybox(updates[SKYBOX_KEY]);
+        }
+        if (removals?.includes(SKYBOX_KEY)) {
+          this.clearSkybox();
+        }
+      },
+      onStateReset: () => this.clearSkybox(),
     });
 
     setupNotificationUI(threeScene);
@@ -184,6 +207,7 @@ class SceneApp {
     });
     this.xrInput.setRecenter(this.recenter);
 
+    // setup UI and supply nesessary functuons 
     setupXRUI(this.panelRot, {
       getFrameSeek: () => this.frameSeek,
       getFramePlay: () => this.framePlay,
@@ -234,6 +258,48 @@ class SceneApp {
 
     this.trajectoryNameElement.textContent = name || 'No trajectory loaded';
   };
+
+  private updateSkybox(value: unknown) {
+    if (Array.isArray(value) && value.length === 0) {
+      this.clearSkybox();
+      return;
+    }
+
+    const revision = ++this.skyboxRevision;
+    void loadResourceTexture((name, args) => this.networkClient.runCommand(name, args), SKYBOX_KEY)
+      .then((texture) => {
+        if (revision === this.skyboxRevision) {
+          this.setSkyboxTexture(texture);
+        }
+        texture.dispose();
+      }).catch((error: unknown) => {
+        console.warn('Failed to load skybox resource', error);
+        if (revision === this.skyboxRevision) {
+          this.setSkyboxTexture(null);
+        }
+      });
+  }
+
+  private clearSkybox() {
+    this.skyboxRevision += 1;
+    this.setSkyboxTexture(null);
+  }
+
+  private setSkyboxTexture(texture: Texture | null) {
+    this.skyboxTexture?.dispose();
+    this.skyboxTexture = null;
+
+    if (!texture) {
+      this.scene.background = SHOW_SKYBOX ? this.fallbackSkyboxTexture : null;
+      return;
+    }
+
+    this.skyboxTexture = texture.clone();
+    this.skyboxTexture.mapping = EquirectangularReflectionMapping;
+    this.skyboxTexture.colorSpace = SRGBColorSpace;
+    this.skyboxTexture.needsUpdate = true;
+    this.scene.background = SHOW_SKYBOX ? this.skyboxTexture : null;
+  }
 
   private recenter = () => {
     const xrCamera = this.renderer.xr.getCamera();

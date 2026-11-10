@@ -8,6 +8,7 @@ export interface SceneShapeData {
   color: ColorTuple;
   size: number;
   parent: string;
+  transform: number[] | null;
 }
 
 export interface SceneLineData {
@@ -34,6 +35,7 @@ export interface SceneSpriteData {
   color: ColorTuple;
   size: number;
   parent: string;
+  transform: number[] | null;
 }
 
 export interface SceneTransformData {
@@ -138,6 +140,23 @@ function asNumberArray(value: unknown): number[] | undefined {
   return numbers;
 }
 
+/**
+ * Parse an inline "transform" property of a scene object (shape, sprite), the
+ * same value type as the "transform" of `transform.` state entries: a flat
+ * array [px, py, pz, qx, qy, qz, qw, sx, sy, sz]. Trailing values may be
+ * omitted and fall back to the identity via {@link applyStateTransform}.
+ *
+ * Returns null when the value is absent or invalid, in which case the object
+ * should use its position/size properties instead.
+ */
+function asStateTransform(value: unknown): number[] | null {
+  const numbers = asNumberArray(value);
+  if (!numbers || numbers.length < 3) {
+    return null;
+  }
+  return numbers;
+}
+
 export function parseShape(value: unknown): SceneShapeData | undefined {
   const data = asObject(value);
   if (!data) {
@@ -150,6 +169,7 @@ export function parseShape(value: unknown): SceneShapeData | undefined {
     color: asColor(data.color),
     size: asNumber(data.size, 0.1),
     parent: asString(data.parent, SIMULATION_PARENT),
+    transform: asStateTransform(data.transform),
   };
 }
 
@@ -207,6 +227,7 @@ export function parseSprite(value: unknown): SceneSpriteData | undefined {
     color: asColor(data.color),
     size: asNumber(data.size, 1),
     parent: asString(data.parent, SIMULATION_PARENT),
+    transform: asStateTransform(data.transform),
   };
 }
 
@@ -216,8 +237,8 @@ export function parseTransform(value: unknown): SceneTransformData | undefined {
     return undefined;
   }
 
-  const transform = asNumberArray(data.transform);
-  if (!transform || transform.length < 3) {
+  const transform = asStateTransform(data.transform);
+  if (!transform) {
     return undefined;
   }
 
