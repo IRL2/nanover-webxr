@@ -9,6 +9,8 @@
   <body>
     <canvas id="scene"></canvas>
 
+    <div id="web-notification" role="status" aria-live="polite" aria-atomic="true"></div>
+
     <div id="control-panel">
       <div id="tab-bar">
         <button class="tab-btn active" data-tab="simulation">Recording</button>
@@ -39,6 +41,7 @@
           <button id="btn-ctrl-step" class="panel-btn">Step</button>
         </div>
         <div id="user-commands-container"></div>
+        <div id="custom-panels-container"></div>
       </div>
 
       <div class="tab-content" id="tab-settings">

@@ -1,4 +1,13 @@
 import { Controller } from 'lil-gui';
+import {
+  CustomPanel,
+  formatSliderValue,
+  getCustomPanels,
+  getVariable,
+  runPanelCommand,
+  setVariable,
+  subscribeCustomUI,
+} from './customUI';
 
 export interface WebUIContext {
     getFrameSeek: () => Controller;
@@ -13,16 +22,20 @@ type DiscoveryServerInfo = { name: string; wss: string; https?: string };
 type DiscoveryResponseItem = { info: DiscoveryServerInfo };
 
 const DISCOVERY_LIST_URL = 'https://irl-discovery.onrender.com/list';
+const NOTIFICATION_DURATION_MS = 4000;
 
 let seekSlider: HTMLInputElement | null = null;
 let playPauseBtn: HTMLButtonElement | null = null;
 let refreshBtn: HTMLButtonElement | null = null;
 let serverButtonsContainer: HTMLDivElement | null = null;
+let webNotification: HTMLElement | null = null;
+let webNotificationTimer: number | undefined;
 let context: WebUIContext | null = null;
 let availableServers: DiscoveryServerInfo[] = [];
 
 export function setupWebUI(ctx: WebUIContext) {
     context = ctx;
+    webNotification = document.getElementById('web-notification');
 
     // tab switching
     const tabBtns = document.querySelectorAll<HTMLButtonElement>('.tab-btn');
@@ -73,6 +86,21 @@ export function setupWebUI(ctx: WebUIContext) {
     setupControlsTab();
 }
 
+export function showWebNotification(message: string) {
+    webNotification ??= document.getElementById('web-notification');
+    if (!webNotification) return;
+
+    webNotification.textContent = message;
+    webNotification.classList.add('visible');
+    if (webNotificationTimer !== undefined) {
+        window.clearTimeout(webNotificationTimer);
+    }
+    webNotificationTimer = window.setTimeout(() => {
+        webNotification?.classList.remove('visible');
+        webNotificationTimer = undefined;
+    }, NOTIFICATION_DURATION_MS);
+}
+
 let controlsPlaying = false;
 let userCommandsContainer: HTMLDivElement | null = null;
 
@@ -93,6 +121,78 @@ function setupControlsTab() {
     });
 
     setWebUserCommands(lastUserCommands);
+
+    customPanelsContainer = document.getElementById('custom-panels-container') as HTMLDivElement | null;
+    subscribeCustomUI((change) => {
+        if (change === 'panels') {
+            renderCustomPanels();
+        } else {
+            sliderUpdaters.forEach(update => update());
+        }
+    });
+    renderCustomPanels();
+}
+
+let customPanelsContainer: HTMLDivElement | null = null;
+let sliderUpdaters: (() => void)[] = [];
+
+function renderCustomPanels() {
+    if (!customPanelsContainer) return;
+    sliderUpdaters = [];
+    customPanelsContainer.replaceChildren(...getCustomPanels().map(buildCustomPanel));
+}
+
+function buildCustomPanel(panel: CustomPanel): HTMLElement {
+    const section = document.createElement('div');
+    section.className = 'custom-panel';
+
+    const title = document.createElement('div');
+    title.className = 'custom-panel-title';
+    title.textContent = panel.label;
+    section.appendChild(title);
+
+    for (const element of panel.elements) {
+        if (element.type === 'header') {
+            const header = document.createElement('div');
+            header.className = 'custom-panel-header';
+            header.textContent = element.label;
+            section.appendChild(header);
+        } else if (element.type === 'button') {
+            const button = document.createElement('button');
+            button.className = 'panel-btn';
+            button.textContent = element.label;
+            button.addEventListener('click', () => {
+                void runPanelCommand(element.command, element.arguments);
+            });
+            section.appendChild(button);
+        } else {
+            const row = document.createElement('label');
+            row.className = 'custom-panel-slider';
+            const text = document.createElement('span');
+            const input = document.createElement('input');
+            input.type = 'range';
+            input.min = String(element.min);
+            input.max = String(element.max);
+            input.step = String(element.step ?? (element.integer ? 1 : (element.max - element.min) / 100));
+            const refresh = () => {
+                const value = Number(getVariable(element.variable));
+                text.textContent = `${element.label}: ${formatSliderValue(element, value)}`;
+                if (Number.isFinite(value) && document.activeElement !== input) {
+                    input.value = String(value);
+                }
+            };
+            input.addEventListener('input', () => {
+                const value = Number(input.value);
+                setVariable(element.variable, element.integer ? Math.round(value) : value);
+                text.textContent = `${element.label}: ${formatSliderValue(element, value)}`;
+            });
+            refresh();
+            sliderUpdaters.push(refresh);
+            row.append(text, input);
+            section.appendChild(row);
+        }
+    }
+    return section;
 }
 
 export function setWebConnected(connected: boolean) {
@@ -105,6 +205,22 @@ export function setWebConnected(connected: boolean) {
 type WebUserCommand = { name: string; label?: string; icon?: string };
 let lastUserCommands: WebUserCommand[] = [];
 
+async function runWebUserCommand(name: string) {
+    const activeContext = context;
+    if (!activeContext) return;
+
+    showWebNotification(`Run ${name}`);
+    const response = await activeContext.runCommand(name);
+    if (response && typeof response === 'object') {
+        const result = (response as Record<string, unknown>).result;
+        if (result !== undefined) {
+            showWebNotification(`${name}: ${String(result)}`);
+        } else if (Object.keys(response).length > 0) {
+            showWebNotification(`Completed ${name}`);
+        }
+    }
+}
+
 export function setWebUserCommands(commands: WebUserCommand[]) {
     lastUserCommands = commands;
     if (!userCommandsContainer) return;
@@ -115,7 +231,7 @@ export function setWebUserCommands(commands: WebUserCommand[]) {
         const label = command.label ?? command.name.split('/').slice(1).join(' ');
         button.textContent = command.icon ? `${command.icon} ${label}` : label;
         button.addEventListener('click', () => {
-            void context?.runCommand(command.name);
+            void runWebUserCommand(command.name);
         });
         userCommandsContainer.appendChild(button);
     }

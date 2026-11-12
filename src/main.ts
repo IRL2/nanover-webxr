@@ -36,6 +36,8 @@ import {
   setupXRUI,
   updateXRUI,
 } from './ui/xrUI';
+import { setupXRCustomUI, updateXRCustomUI, customControlPanel } from './ui/xrCustomUI';
+import { applyCustomUIState, configureCustomUI, resetCustomUI } from './ui/customUI';
 import { setupWebUI, updateWebUI, setWebConnected, setWebUserCommands } from './ui/webUI';
 import { setupNotificationUI, showNotification, updateNotificationUI } from './ui/xrNotification';
 import { AvatarRendering } from './visuals/avatar-rendering';
@@ -172,6 +174,7 @@ class SceneApp {
       interactionManager: this.interactionManager,
       primitivesRenderer: this.primitivesRenderer,
       onStateDelta: (updates, removals) => {
+        applyCustomUIState(updates, removals);
         if (updates && Object.hasOwn(updates, SKYBOX_KEY)) {
           this.updateSkybox(updates[SKYBOX_KEY]);
         }
@@ -179,7 +182,10 @@ class SceneApp {
           this.clearSkybox();
         }
       },
-      onStateReset: () => this.clearSkybox(),
+      onStateReset: () => {
+        this.clearSkybox();
+        resetCustomUI();
+      },
     });
 
     setupNotificationUI(threeScene);
@@ -206,6 +212,12 @@ class SceneApp {
       getColocationMode,
     });
     this.xrInput.setRecenter(this.recenter);
+
+    configureCustomUI({
+      runCommand: (name, args) => this.networkClient.runCommand(name, args),
+      publishSharedState: (updates) => this.networkClient.setSharedState(updates),
+    });
+    setupXRCustomUI(threeScene);
 
     // setup UI and supply nesessary functuons 
     setupXRUI(this.panelRot, {
@@ -449,6 +461,8 @@ class SceneApp {
       this.xrInput.controllers,
     );
 
+    updateXRCustomUI(dt, this.renderer.xr.isPresenting, activeCamera, this.xrInput.controllers);
+
     updateWebUI(this.frameSeek.getValue(), maxFrames);
 
     updateNotificationUI(
@@ -468,7 +482,7 @@ class SceneApp {
     }
 
     this.cameraControls.update();
-    this.xrInput.update(controlPanel);
+    this.xrInput.update(controlPanel, customControlPanel);
     this.networkClient.updateLocalState(this.xrInput.collectAvatarComponents(), this.xrInput.collectCursors());
     this.renderer.render(this.scene, this.camera);
     this.stats.end();

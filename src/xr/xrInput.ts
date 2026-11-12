@@ -33,6 +33,13 @@ import {
   UIKitButton,
   uikitButtons,
 } from '../ui/xrUI';
+import {
+  customGrabHandle,
+  endCustomPanelGrab,
+  isCustomPanelBeingGrabbed,
+  resetCustomPanelPlacement,
+  startCustomPanelGrab,
+} from '../ui/xrCustomUI';
 
 type XRPointer = {
   pointer: Pointer;
@@ -251,7 +258,7 @@ export class XRInputManager {
     return components;
   }
 
-  update(panelRoot: Object3D | undefined) {
+  update(panelRoot: Object3D | undefined, extraPanelRoot?: Object3D) {
     if (!this.renderer.xr.isPresenting) {
       for (const { rayLine, tipMarker } of this.pointers) {
         rayLine.visible = false;
@@ -269,7 +276,7 @@ export class XRInputManager {
     }
 
     this.manipulation.update();
-    this.updateRayPointers(panelRoot);
+    this.updateRayPointers(panelRoot, extraPanelRoot);
     this.interactionManager.updateActive();
     this.interactionManager.updateHoverHighlight();
     this.updateForceScaleFromThumbstick();
@@ -456,6 +463,10 @@ export class XRInputManager {
           startPanelGrab(controller, this.panelRot);
           return;
         }
+        if (customGrabHandle && intersection && this.isDescendantOf(intersection.object, customGrabHandle)) {
+          startCustomPanelGrab(controller);
+          return;
+        }
 
         this.interactionManager.start(controller);
       });
@@ -464,6 +475,9 @@ export class XRInputManager {
         pointer.up({ timeStamp: performance.now(), button: 0 });
         if (isPanelBeingGrabbed()) {
           endPanelGrab();
+        }
+        if (isCustomPanelBeingGrabbed()) {
+          endCustomPanelGrab();
         }
         this.interactionManager.end(controller);
       });
@@ -483,11 +497,15 @@ export class XRInputManager {
     }
   }
 
-  private updateRayPointers(panelRoot: Object3D | undefined) {
+  private updateRayPointers(panelRoot: Object3D | undefined, extraPanelRoot?: Object3D) {
     for (const { pointer, rayLine } of this.pointers) {
       pointer.move(this.scene, { timeStamp: performance.now() });
       const intersection = pointer.getIntersection();
-      const hitsPanel = Boolean(panelRoot && intersection && this.isDescendantOf(intersection.object, panelRoot));
+      const hitsPanel = Boolean(
+        intersection &&
+        ((panelRoot && this.isDescendantOf(intersection.object, panelRoot)) ||
+          (extraPanelRoot && this.isDescendantOf(intersection.object, extraPanelRoot))),
+      );
 
       if (hitsPanel && intersection) {
         rayLine.visible = true;
@@ -506,6 +524,7 @@ export class XRInputManager {
       this.colocation.onSessionStart(this.activeSession);
     }
     resetPanelPlacement();
+    resetCustomPanelPlacement();
     window.setTimeout(() => this.recenter(), 500);
   };
 

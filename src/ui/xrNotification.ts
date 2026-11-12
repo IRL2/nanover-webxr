@@ -1,5 +1,6 @@
 import { Container, Text as UIText } from '@pmndrs/uikit';
 import { Object3D, PerspectiveCamera, Quaternion, Vector3 } from 'three';
+import { showWebNotification } from './webUI';
 
 const NOTIFICATION_DURATION = 4;
 const NOTIFICATION_OFFSET = new Vector3(-0.14, 0.03, 0);
@@ -42,6 +43,8 @@ export function setupNotificationUI(parent: Object3D) {
 }
 
 export function showNotification(message: string) {
+    showWebNotification(message);
+
     if (!notificationRoot || !notificationText) {
         return;
     }
