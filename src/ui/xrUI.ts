@@ -1,4 +1,5 @@
 import { Container, Image, Text as UIText } from '@pmndrs/uikit';
+import { Slider } from '@pmndrs/uikit-default';
 import { Object3D, Vector3, PerspectiveCamera, Group, Matrix4, Quaternion } from 'three';
 import { Controller } from 'lil-gui';
 import twemoji from '@twemoji/api';
@@ -43,8 +44,11 @@ let colocationBtnText: UIText | undefined;
 let colocationColor = 0x4CAF50;
 let colocationBtn: Container | undefined;
 let colocationStatusText: UIText | undefined;
-let forceScaleText: UIText | undefined;
-let forceScaleRow: Container | undefined;
+let backgroundSlider: Slider | undefined;
+let backgroundModeText: UIText | undefined;
+let getSkyboxOpacity: (() => number) | undefined;
+let lastSkyboxOpacity: number | undefined;
+let lastNotifiedForceScale = Math.round(forceScale);
 let simulationPlayBtnText: UIText | undefined;
 let selectionTargetBtnText: UIText | undefined;
 let colocationButton: UIKitButton | undefined;
@@ -53,7 +57,7 @@ const forceTypeButtons = new Map<ForceType, UIKitButton>();
 const ACTIVE_BUTTON_SHADE = 0x303030;
 const FORCE_BUTTON_COLOR = 0x5C6BC0;
 const PLAYBACK_PANEL_HEIGHT = 0.4;
-const CONNECTED_PANEL_HEIGHT = 0.55;
+const CONNECTED_PANEL_HEIGHT = 0.7;
 const FORCE_TYPE_OPTIONS: { value: ForceType; label: string }[] = [
     { value: 'gaussian', label: 'GAUSS' },
     { value: 'spring', label: 'SPRING' },
@@ -193,9 +197,6 @@ function updateUIVisibility() {
     if (colocationStatusText) {
         colocationStatusText.setProperties({ display: showConnected && colocationMode ? "flex" : "none" } as any);
     }
-    if (forceScaleText) {
-        forceScaleText.setProperties({ display: showConnected ? "flex" : "none" } as any);
-    }
 }
 
 function toggleColocationMode() {
@@ -272,12 +273,15 @@ export interface XRUIContext {
     getFramePlay: () => Controller;
     recenter: () => void;
     runCommand: (name: string, args?: Record<string, unknown>) => Promise<unknown>;
+    getSkyboxOpacity: () => number;
+    setSkyboxOpacity: (opacity: number) => void;
     publishSharedState?: (updates: Record<string, unknown>, removals?: string[]) => void;
 }
 
 // builds the panel. the UI attached to the panelRot object positioned 
 // relative to the headsed
 export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
+    getSkyboxOpacity = context.getSkyboxOpacity;
 
     // root container for the entire UI
     controlPanel = new Container({
@@ -382,6 +386,46 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
         alignItems: "flex-start",
     });
     userCommandsPanel.add(userCommandsRow);
+
+    const backgroundModePanel = new Container({
+        sizeX: 0.9,
+        flexDirection: "column",
+        alignItems: "stretch",
+        backgroundColor: 0x1a1a1a,
+        padding: 5,
+        gap: 3,
+        borderRadius: 4,
+    });
+    backgroundModeText = new UIText({
+        fontSize: 2.2,
+        color: 0xcccccc,
+        anchorX: "center",
+        anchorY: "middle",
+    });
+    backgroundSlider = new Slider();
+    backgroundSlider.setProperties({
+        width: "100%",
+        min: 0,
+        max: 100,
+        step: 1,
+        value: context.getSkyboxOpacity(),
+        pointerEvents: "auto",
+        onValueChange: (value: number) => {
+            context.setSkyboxOpacity(value);
+            updateBackgroundModeLabel();
+        },
+    } as any);
+    backgroundSlider.thumb?.setProperties({
+        borderColor: 0x888888,
+        borderWidth: 1,
+        height: 9,
+        width: 9,
+        transformTranslateX: -5,
+        transformTranslateY: -2,
+    } as any);
+    backgroundSlider.track?.setProperties({ height: 4 } as any);
+    backgroundModePanel.add(backgroundModeText, backgroundSlider);
+    updateBackgroundModeLabel();
 
     async function runUserCommand(name: string) {
         showNotification(`Run ${name}`);
@@ -566,25 +610,10 @@ export function setupXRUI(panelRot: Object3D, context: XRUIContext) {
     });
     colocationStatusText.setProperties({ text: "", display: "none" } as any);
 
-    forceScaleText = new UIText({
-        fontSize: 2,
-        color: 0x888888,
-        anchorX: "center",
-        anchorY: "middle",
-    });
-    forceScaleText.setProperties({ text: "SCALE: 100", display: "none" } as any);
-
-    forceScaleRow = new Container({
-        flexDirection: "row",
-        justifyContent: "center",
-        alignItems: "center",
-    });
-    forceScaleRow.add(forceScaleText);
-
-    connectedRow.add(colocationBtn, colocationStatusText);
+    connectedRow.add(colocationBtn, colocationStatusText, backgroundModePanel);
     connectedRow.setProperties({ display: "none" } as any);
 
-    uiContainer.add(connectedRow, forceScaleRow);
+    uiContainer.add(connectedRow);
     updateColocationUI();
     updateForceTypeButtons();
 
@@ -634,9 +663,12 @@ export function updateXRUI(
         updateForceTypeButtons();
 
         playbackUI?.syncFrame(frameSeekValue, maxFrames);
+        updateBackgroundModeLabel();
 
-        if (forceScaleText) {
-            forceScaleText.setProperties({ text: `SCALE: ${Math.round(forceScale)}` } as any);
+        const displayedForceScale = Math.round(forceScale);
+        if (displayedForceScale !== lastNotifiedForceScale) {
+            lastNotifiedForceScale = displayedForceScale;
+            showNotification(`SCALE: ${displayedForceScale}`);
         }
 
         controlPanel.visible = isPresenting || showPanelInDesktop;
@@ -658,6 +690,7 @@ export function updateXRUI(
                      closestController = c;
                  }
             }
+
         }
 
         if (closestController) {
@@ -714,4 +747,16 @@ export function updateXRUI(
             }
         }
     }
+}
+
+function updateBackgroundModeLabel() {
+    if (!backgroundModeText || !backgroundSlider || !getSkyboxOpacity) return;
+    const opacity = getSkyboxOpacity();
+    if (lastSkyboxOpacity === opacity) return;
+
+    lastSkyboxOpacity = opacity;
+    backgroundModeText.setProperties({
+        text: `Passthrough level: ${Math.round(opacity)}%`,
+    } as any);
+    backgroundSlider.setProperties({ value: opacity } as any);
 }

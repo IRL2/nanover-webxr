@@ -16,6 +16,8 @@ export interface WebUIContext {
     connectToServer: (host: string) => void;
     runCommand: (name: string, args?: Record<string, unknown>) => Promise<unknown>;
     setCartoonStyle: (style: 'simple' | 'advanced') => void;
+    getSkyboxOpacity: () => number;
+    setSkyboxOpacity: (opacity: number) => void;
 }
 
 type DiscoveryServerInfo = { name: string; wss: string; https?: string };
@@ -28,6 +30,8 @@ let seekSlider: HTMLInputElement | null = null;
 let playPauseBtn: HTMLButtonElement | null = null;
 let refreshBtn: HTMLButtonElement | null = null;
 let serverButtonsContainer: HTMLDivElement | null = null;
+let backgroundSlider: HTMLInputElement | null = null;
+let backgroundValue: HTMLOutputElement | null = null;
 let webNotification: HTMLElement | null = null;
 let webNotificationTimer: number | undefined;
 let context: WebUIContext | null = null;
@@ -79,6 +83,19 @@ export function setupWebUI(ctx: WebUIContext) {
         cartoonSelect.addEventListener('change', () => {
             context?.setCartoonStyle(cartoonSelect.value as 'simple' | 'advanced');
         });
+    }
+
+    const slider = document.getElementById('webxr-background-slider') as HTMLInputElement | null;
+    backgroundSlider = slider;
+    backgroundValue = document.getElementById('webxr-background-value') as HTMLOutputElement | null;
+    if (slider) {
+        const updateBackground = () => {
+            context?.setSkyboxOpacity(Number(slider.value));
+            syncBackgroundControl();
+        };
+        slider.value = String(context.getSkyboxOpacity());
+        slider.addEventListener('input', updateBackground);
+        syncBackgroundControl();
     }
 
     // server functionality
@@ -317,10 +334,25 @@ function syncPlayPauseLabel() {
     playPauseBtn.textContent = isPlaying ? 'Pause' : 'Play';
 }
 
+function syncBackgroundControl() {
+    if (!context) return;
+    const opacity = context.getSkyboxOpacity();
+    if (backgroundSlider) {
+        const value = String(opacity);
+        if (backgroundSlider.value !== value) {
+            backgroundSlider.value = value;
+        }
+    }
+    if (backgroundValue) {
+        backgroundValue.textContent = `${Math.round(opacity)}%`;
+    }
+}
+
 export function updateWebUI(currentFrame: number, maxFrames: number) {
     if (seekSlider) {
         seekSlider.max = String(Math.max(0, maxFrames - 1));
         seekSlider.value = String(currentFrame);
     }
     syncPlayPauseLabel();
+    syncBackgroundControl();
 }

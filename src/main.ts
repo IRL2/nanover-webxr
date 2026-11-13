@@ -1,17 +1,20 @@
 import GUI, { Controller } from 'lil-gui';
 import {
   AmbientLight,
+  BackSide,
   Clock,
   Color,
   DirectionalLight,
-  EquirectangularReflectionMapping,
   Mesh,
+  MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
+  SphereGeometry,
   Texture,
   TextureLoader,
+  UVMapping,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -50,7 +53,6 @@ import { PrimitivesRenderer } from './visuals/primitives-renderer';
 
 const CANVAS_ID = 'scene';
 const SKYBOX_KEY = 'suggestions.skybox';
-const SHOW_SKYBOX = false;
 
 function getURLParam(param: string): string | null {
   const urlParams = new URLSearchParams(window.location.search);
@@ -73,6 +75,16 @@ class SceneApp {
   private readonly panelRot = new Object3D();
   private fallbackSkyboxTexture: Texture | null = null;
   private skyboxTexture: Texture | null = null;
+  private skyboxOpacity = 0;
+  private readonly skyboxMaterial = new MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: BackSide,
+    toneMapped: false,
+  });
+  private readonly skyboxDome = new Mesh(new SphereGeometry(500, 48, 32), this.skyboxMaterial);
   private skyboxRevision = 0;
   private readonly live = new NaiveRenderer();
   private readonly cartoon = new CartoonRenderer();
@@ -89,6 +101,7 @@ class SceneApp {
   
   private readonly recenterPosition = new Vector3();
   private readonly recenterDirection = new Vector3();
+  private readonly skyboxPosition = new Vector3();
 
   private frameSeek!: Controller;
   private framePlay!: Controller;
@@ -113,6 +126,9 @@ class SceneApp {
     this.cartoon.visible = false;
     this.simpleCartoon.visible = false;
     threeScene.add(this.panelRot);
+    this.skyboxDome.frustumCulled = false;
+    this.skyboxDome.renderOrder = -1000;
+    threeScene.add(this.skyboxDome);
 
     this.camera = new PerspectiveCamera(75, this.canvas.clientWidth / this.canvas.clientHeight, 0.1, 1000);
     this.camera.position.set(2, 2, 5);
@@ -130,12 +146,10 @@ class SceneApp {
     new TextureLoader().load(
       '/images/panoramic_skybox.png',
       (texture) => {
-        texture.mapping = EquirectangularReflectionMapping;
+        texture.mapping = UVMapping;
         texture.colorSpace = SRGBColorSpace;
         this.fallbackSkyboxTexture = texture;
-        if (SHOW_SKYBOX && !this.skyboxTexture) {
-          this.scene.background = texture;
-        }
+        this.updateSkyboxMaterial();
       },
       undefined,
       (error) => {
@@ -223,6 +237,8 @@ class SceneApp {
     setupXRUI(this.panelRot, {
       getFrameSeek: () => this.frameSeek,
       getFramePlay: () => this.framePlay,
+      getSkyboxOpacity: () => this.skyboxOpacity,
+      setSkyboxOpacity: opacity => this.setSkyboxOpacity(opacity),
       recenter: this.recenter,
       publishSharedState: (updates, removals) => this.networkClient.setSharedState(updates, removals),
       runCommand: (name, args) => this.networkClient.runCommand(name, args),
@@ -233,6 +249,8 @@ class SceneApp {
       getFramePlay: () => this.framePlay,
       updateTrajectoryName: this.updateTrajectoryName,
       setCartoonStyle: style => this.networkClient.setCartoonStyle(style),
+      getSkyboxOpacity: () => this.skyboxOpacity,
+      setSkyboxOpacity: opacity => this.setSkyboxOpacity(opacity),
       runCommand: (name, args) => this.networkClient.runCommand(name, args),
       connectToServer: (host: string) => {
         this.networkClient.connect(host);
@@ -301,16 +319,28 @@ class SceneApp {
     this.skyboxTexture?.dispose();
     this.skyboxTexture = null;
 
-    if (!texture) {
-      this.scene.background = SHOW_SKYBOX ? this.fallbackSkyboxTexture : null;
-      return;
+    if (texture) {
+      this.skyboxTexture = texture.clone();
+      this.skyboxTexture.mapping = UVMapping;
+      this.skyboxTexture.colorSpace = SRGBColorSpace;
+      this.skyboxTexture.needsUpdate = true;
     }
 
-    this.skyboxTexture = texture.clone();
-    this.skyboxTexture.mapping = EquirectangularReflectionMapping;
-    this.skyboxTexture.colorSpace = SRGBColorSpace;
-    this.skyboxTexture.needsUpdate = true;
-    this.scene.background = SHOW_SKYBOX ? this.skyboxTexture : null;
+    this.updateSkyboxMaterial();
+  }
+
+  private setSkyboxOpacity(opacity: number) {
+    this.skyboxOpacity = Number.isFinite(opacity) ? Math.min(100, Math.max(0, opacity)) : 0;
+    this.updateSkyboxMaterial();
+  }
+
+  private updateSkyboxMaterial() {
+    const texture = this.skyboxTexture ?? this.fallbackSkyboxTexture;
+    if (this.skyboxMaterial.map !== texture) {
+      this.skyboxMaterial.map = texture;
+      this.skyboxMaterial.needsUpdate = true;
+    }
+    this.skyboxMaterial.opacity = this.skyboxOpacity / 100;
   }
 
   private recenter = () => {
@@ -450,6 +480,8 @@ class SceneApp {
     const activeCamera = this.renderer.xr.isPresenting
       ? (this.renderer.xr.getCamera() as unknown as PerspectiveCamera)
       : this.camera;
+    activeCamera.getWorldPosition(this.skyboxPosition);
+    this.skyboxDome.position.copy(this.skyboxPosition);
 
     updateXRUI(
       dt,

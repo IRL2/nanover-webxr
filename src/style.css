@@ -229,9 +229,23 @@ h1 {
   align-items: stretch;
 }
 
-#cartoon-style-label {
+#cartoon-style-label,
+#webxr-background-label {
   color: #aabbcc;
   font-size: 13px;
+}
+
+#webxr-background-label output {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.range-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: -8px;
+  color: #aabbcc;
+  font-size: 12px;
 }
 
 #cartoon-style-select {
@@ -278,7 +292,8 @@ h1 {
   color: #ff8f8f;
 }
 
-#seek-slider {
+#seek-slider,
+#webxr-background-slider {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -289,7 +304,8 @@ h1 {
   cursor: pointer;
 }
 
-#seek-slider::-webkit-slider-thumb {
+#seek-slider::-webkit-slider-thumb,
+#webxr-background-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -300,7 +316,8 @@ h1 {
   cursor: pointer;
 }
 
-#seek-slider::-moz-range-thumb {
+#seek-slider::-moz-range-thumb,
+#webxr-background-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
