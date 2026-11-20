@@ -144,7 +144,7 @@ class SceneApp {
     this.cameraControls.update();
 
     new TextureLoader().load(
-      '/images/panoramic_skybox.png',
+      './images/panoramic_skybox.png',
       (texture) => {
         texture.mapping = UVMapping;
         texture.colorSpace = SRGBColorSpace;
@@ -266,7 +266,7 @@ class SceneApp {
       document.body.appendChild(this.stats.dom);
     }
 
-    document.body.appendChild(XRButton.createButton(this.renderer, { optionalFeatures: ['anchors'] }));
+    document.body.appendChild(XRButton.createButton(this.renderer, { optionalFeatures: ['anchors', 'hand-tracking'] }));
 
     this.setupDebugGui(showDebug);
 
@@ -483,6 +483,9 @@ class SceneApp {
     activeCamera.getWorldPosition(this.skyboxPosition);
     this.skyboxDome.position.copy(this.skyboxPosition);
 
+    // update XR input first so panels follow the current frame's grab anchors
+    this.xrInput.update(controlPanel, customControlPanel);
+
     updateXRUI(
       dt,
       this.renderer.xr.isPresenting,
@@ -514,7 +517,6 @@ class SceneApp {
     }
 
     this.cameraControls.update();
-    this.xrInput.update(controlPanel, customControlPanel);
     this.networkClient.updateLocalState(this.xrInput.collectAvatarComponents(), this.xrInput.collectCursors());
     this.renderer.render(this.scene, this.camera);
     this.stats.end();

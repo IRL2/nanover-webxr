@@ -80,6 +80,9 @@ let isPanelGrabbed = false;
 let hasBeenPlaced = false;
 let initialPositionSet = false;
 let grabbingController: Group | null = null;
+// hand grabs follow position only and keep facing the head (no wrist rotation)
+let grabHeadFacing = false;
+const grabWorldOffset = new Vector3();
 
 // matrices for calculation
 const offsetMatrix = new Matrix4();
@@ -214,20 +217,33 @@ export function getGrabHandle(): Container | undefined {
     return grabHandle;
 }
 
+// hands grab at the (smoothed) pinch point, controllers at their own origin
+function getGrabSourcePosition(controller: Group, out: Vector3) {
+    const anchor = controller.userData.grabAnchor as Object3D | undefined;
+    return (anchor ?? controller).getWorldPosition(out);
+}
+
 export function startPanelGrab(controller: Group, panelRot: Object3D) {
     if (isPanelGrabbed) return;
 
     isPanelGrabbed = true;
     grabbingController = controller;
+    grabHeadFacing = controller.userData.isHand === true;
 
     panelRot.updateMatrixWorld(true);
     controller.updateMatrixWorld(true);
 
-    panelWorldMatrix.copy(panelRot.matrixWorld);
-    controllerWorldMatrix.copy(controller.matrixWorld);
-    inverseControllerMatrix.copy(controllerWorldMatrix).invert();
+    if (grabHeadFacing) {
+        panelRot.getWorldPosition(grabWorldOffset);
+        getGrabSourcePosition(controller, targetPos);
+        grabWorldOffset.sub(targetPos);
+    } else {
+        panelWorldMatrix.copy(panelRot.matrixWorld);
+        controllerWorldMatrix.copy(controller.matrixWorld);
+        inverseControllerMatrix.copy(controllerWorldMatrix).invert();
 
-    offsetMatrix.multiplyMatrices(inverseControllerMatrix, panelWorldMatrix);
+        offsetMatrix.multiplyMatrices(inverseControllerMatrix, panelWorldMatrix);
+    }
 
     grabHandle?.setProperties({ backgroundColor: 0x4488ff });
 }
@@ -235,9 +251,16 @@ export function startPanelGrab(controller: Group, panelRot: Object3D) {
 export function endPanelGrab() {
     isPanelGrabbed = false;
     grabbingController = null;
+    grabHeadFacing = false;
     hasBeenPlaced = true;
 
     grabHandle?.setProperties({ backgroundColor: 0x888888 });
+}
+
+export function endPanelGrabFor(controller: Group) {
+    if (isPanelGrabbed && grabbingController === controller) {
+        endPanelGrab();
+    }
 }
 
 export function resetPanelPlacement() {
@@ -245,10 +268,26 @@ export function resetPanelPlacement() {
     initialPositionSet = false;
 }
 
-export function updatePanelGrab(panelRot: Object3D) {
+export function updatePanelGrab(panelRot: Object3D, camera: PerspectiveCamera) {
     if (!isPanelGrabbed || !grabbingController) return;
 
     grabbingController.updateMatrixWorld(true);
+
+    if (grabHeadFacing) {
+        // follow the hand position, but keep the panel facing the head
+        getGrabSourcePosition(grabbingController, targetPos);
+        targetPos.add(grabWorldOffset);
+        panelRot.position.copy(targetPos);
+        if (panelRot.parent) {
+            panelRot.parent.updateWorldMatrix(true, false);
+            panelRot.parent.worldToLocal(panelRot.position);
+        }
+        camera.getWorldPosition(camPos);
+        camPos.y = targetPos.y;
+        panelRot.lookAt(camPos);
+        return;
+    }
+
     panelWorldMatrix.multiplyMatrices(grabbingController.matrixWorld, offsetMatrix);
     if (panelRot.parent) {
         const parentInverse = new Matrix4().copy(panelRot.parent.matrixWorld).invert();
@@ -700,7 +739,7 @@ export function updateXRUI(
     }
 
     if (isPanelGrabbed && grabbingController) {
-        updatePanelGrab(panelRot);
+        updatePanelGrab(panelRot, camera);
     }
 
     if ((isPresenting || showPanelInDesktop) && controlPanel && panelRot) {

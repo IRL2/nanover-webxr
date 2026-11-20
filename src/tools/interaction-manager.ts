@@ -37,13 +37,15 @@ interface InteractionManagerOptions {
 }
 
 export const MAX_INTERACTION_DISTANCE = 0.3;
+// hands interact by touch: the pinch point must be right next to an atom
+export const HAND_INTERACTION_DISTANCE = 0.05;
 
 export class InteractionManager {
   private readonly objects: Object3D;
   private readonly interactionLines = new Group();
   private readonly remoteInteractionLines = new Group();
   private readonly activeInteractions = new Map<Group<WebXRSpaceEventMap>, ActiveInteraction>();
-  private readonly controllerTips = new Map<Group<WebXRSpaceEventMap>, Object3D>();
+  private readonly controllerTips = new Map<Group<WebXRSpaceEventMap>, { tip: Object3D; maxDistance: number }>();
   private readonly remoteLines: Mesh[] = [];
 
   private readonly lineGeometry = new CylinderGeometry(0.002, 0.002, 1, 8);
@@ -111,8 +113,8 @@ export class InteractionManager {
     this.particleResidues = residues;
   }
 
-  registerControllerTip(controller: Group<WebXRSpaceEventMap>, tip: Object3D) {
-    this.controllerTips.set(controller, tip);
+  registerControllerTip(controller: Group<WebXRSpaceEventMap>, tip: Object3D, maxDistance = MAX_INTERACTION_DISTANCE) {
+    this.controllerTips.set(controller, { tip, maxDistance });
   }
 
   setHighlightRenderer(renderer: NaiveRenderer | null) {
@@ -127,13 +129,13 @@ export class InteractionManager {
       return;
     }
 
-    const tip = this.controllerTips.get(controller);
-    if (!tip) {
+    const tipEntry = this.controllerTips.get(controller);
+    if (!tipEntry) {
       return;
     }
 
-    tip.getWorldPosition(this.worldPos);
-    const particle = this.findNearbyParticle(this.worldPos);
+    tipEntry.tip.getWorldPosition(this.worldPos);
+    const particle = this.findNearbyParticle(this.worldPos, tipEntry.maxDistance);
     if (particle === undefined) {
       return;
     }
@@ -185,12 +187,12 @@ export class InteractionManager {
       return;
     }
 
-    const tip = this.controllerTips.get(controller);
-    if (!tip) {
+    const tipEntry = this.controllerTips.get(controller);
+    if (!tipEntry) {
       return;
     }
 
-    tip.getWorldPosition(this.worldPos);
+    tipEntry.tip.getWorldPosition(this.worldPos);
 
     this.toSimulationPosition(this.worldPos, this.simPos);
     this.sendInteraction(active.id, {
@@ -239,13 +241,18 @@ export class InteractionManager {
     if (this.currentPositions && this.controllerTips.size > 0) {
       this.objects.updateMatrixWorld(false);
 
-      for (const [controller, tip] of this.controllerTips.entries()) {
+      for (const [controller, { tip, maxDistance }] of this.controllerTips.entries()) {
         if (this.activeInteractions.has(controller)) {
           continue;
         }
 
+        // skip untracked hand anchors (their position is stale)
+        if (!tip.visible) {
+          continue;
+        }
+
         tip.getWorldPosition(this.worldPos);
-        const particle = this.findNearbyParticle(this.worldPos);
+        const particle = this.findNearbyParticle(this.worldPos, maxDistance);
 
         if (particle !== undefined) {
           if (selectionTarget === 'residue' && this.particleResidues) {
@@ -358,7 +365,7 @@ export class InteractionManager {
     return true;
   }
 
-  private findNearbyParticle(worldPos: Vector3): number | undefined {
+  private findNearbyParticle(worldPos: Vector3, maxDistance = MAX_INTERACTION_DISTANCE): number | undefined {
     const closest = this.findClosestAtoms(worldPos, 1);
     if (closest.length === 0) {
       return undefined;
@@ -366,7 +373,7 @@ export class InteractionManager {
 
     const particle = closest[0];
     if (!this.getAtomWorldPosition(particle, this.atomPos)
-      || worldPos.distanceTo(this.atomPos) > MAX_INTERACTION_DISTANCE) {
+      || worldPos.distanceTo(this.atomPos) > maxDistance) {
       return undefined;
     }
 
